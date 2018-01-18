@@ -41,6 +41,8 @@ namespace DnsProxy.Service
                     server.QueryReceived += ServerQueryReceived;
                     server.Start();
                     _servers[i] = server;
+
+                    DnsProxyLogger.Instance.ProxyStarted(_listenAddresses[i]);
                 }
 
                 _started = true;
@@ -61,44 +63,35 @@ namespace DnsProxy.Service
                     _servers[i].Stop();
                     _servers[i].QueryReceived -= ServerQueryReceived;
                     _servers[i] = null;
+
+                    DnsProxyLogger.Instance.ProxyStopped(_listenAddresses[i]);
                 }
 
                 _started = false;
             }
         }
 
-        // Implementation copied from https://github.com/rtumaykin/hyperv-dnsproxy/blob/master/DnsProxy.Service/ServiceManager.cs
         private static async Task ServerQueryReceived(object sender, QueryReceivedEventArgs eventArgs)
         {
-            var message = eventArgs.Query as DnsMessage;
-            var response = message?.CreateResponseInstance();
-
-            if (message?.Questions.Count == 1)
+            if (!(eventArgs.Query is DnsMessage message))
             {
-                // send query to upstream _servers
-                var question = message.Questions[0];
+                return;
+            }
 
-                var upstreamResponse =
-                    await DnsClient.Default.ResolveAsync(question.Name, question.RecordType, question.RecordClass);
-
-                // if got an answer, copy it to the message sent to the client
-                if (upstreamResponse != null)
+            if (DnsProxyLogger.Instance.IsEnabled())
+            {
+                DnsProxyLogger.Instance.DnsQuery(message.Questions.Count);
+                // log the questions
+                for (int i = 0; i < message.Questions.Count; i++)
                 {
-                    foreach (var record in (upstreamResponse.AnswerRecords))
-                    {
-                        response.AnswerRecords.Add(record);
-                    }
-                    foreach (var record in (upstreamResponse.AdditionalRecords))
-                    {
-                        response.AdditionalRecords.Add(record);
-                    }
-
-                    response.ReturnCode = ReturnCode.NoError;
-
-                    // set the response
-                    eventArgs.Response = response;
+                    DnsProxyLogger.Instance.DnsQuestion(i, message.Questions[i].ToString());
                 }
             }
+
+            // relay the message to upstream servers
+            var response = await DnsClient.Default.SendMessageAsync(message);
+
+            eventArgs.Response = response;
         }
     }
 }

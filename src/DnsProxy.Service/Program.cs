@@ -1,5 +1,6 @@
 ﻿using System;
 using Topshelf;
+using Topshelf.StartParameters;
 
 namespace DnsProxy.Service
 {
@@ -11,7 +12,8 @@ namespace DnsProxy.Service
 
             var rc = HostFactory.Run(x =>
             {
-                x.AddCommandLineDefinition("listen", value => listenConfig = value);
+                x.EnableStartParameters();
+                x.WithStartParameter("listen", value => listenConfig = value);
 
                 x.Service<DnsProxyService>(svc =>
                 {
@@ -19,11 +21,21 @@ namespace DnsProxy.Service
                     svc.WhenStarted(dps => dps.Start());
                     svc.WhenStopped(dps => dps.Stop());
                 });
-                x.RunAsNetworkService();
 
                 x.SetDescription("Simple DNS Proxy Service");
                 x.SetDisplayName("Simple DNS Proxy");
                 x.SetServiceName("simple-dns-proxy");
+
+                x.RunAsNetworkService();
+                x.StartAutomatically();
+                x.EnableServiceRecovery(r =>
+                {
+                    r.OnCrashOnly();
+                    r.RestartService(1);
+                    r.RestartService(1);
+                    r.RestartService(1);
+                    r.SetResetPeriod(0);
+                });
             });
 
             var exitCode = (int) rc;
